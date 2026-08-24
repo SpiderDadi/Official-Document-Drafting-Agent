@@ -2,6 +2,7 @@
 name: policy
 description: >
   政策解读全流程内容创作智能体。用于每日信源聚合（求是、人民日报、新华社等）整理简报、深度政策解析、视频口播词与PPT分镜制作。
+  推荐使用工作流模式（`daily-policy-briefing`）并行抓取7个信源，比手动搜索快3-5倍。
   当用户提到"政策解读"、"政策分析"、"新闻简报"、"每日简报"、"政策早报"、"口播词"、"视频脚本"、"政策视频"、"求是"、"人民日报解读"、
   "政策调研"、"经济政策"、"农业政策"、"科技政策"、"民生政策"时，务必使用此 skill。
   即使用户没有明确说出"政策"二字，只要涉及对官方新闻/政策文件的深度解读、短视频内容制作、PPT分镜设计，就应该触发此 skill。
@@ -27,6 +28,14 @@ description: >
 ### 模式 A：每日信源聚合与早报整理
 
 **触发方式**：用户说"整理今日政策简报""每日信源聚合""政策早报""今天有什么重要政策新闻"等。
+
+**注意：推荐使用工作流模式（更快更准）**
+- 直接说 **"跑daily-policy-briefing"** 或 **"运行每日政策简报工作流"**
+- 系统会自动并行搜索7个信源，比手动逐个搜索快3-5倍
+- 自动汇总去重、评级，生成标准格式简报
+- 工作流文件位于 `.claude/workflows/daily-policy-briefing.js`
+
+**手动模式（备选）**：如工作流不可用，按以下方式手动搜索：
 
 **监控信源：**
 - 《求是》杂志（理论版头条、政策解读专栏）
@@ -160,8 +169,10 @@ description: >
 
 ### 信息获取方式
 
-- 使用 `WebSearch` 或 `WebFetch` 工具获取官方信源的最新内容
-- 优先访问：www.gov.cn、qstheory.cn、paper.people.com.cn、www.xinhuanet.com
+- **推荐：使用工作流** — 说"跑daily-policy-briefing"即可触发 `.claude/workflows/daily-policy-briefing.js`，并行搜索7个信源，速度快3-5倍
+- **手动搜索**：使用 `WebSearch` 或 `WebFetch` 工具获取官方信源的最新内容
+- **优先访问**：www.gov.cn、qstheory.cn、paper.people.com.cn、www.xinhuanet.com
+- **遇到权限限制时**：部分网站可能被网络策略限制，可尝试用 `WebSearch` 搜索替代直接 `WebFetch`
 - 参见 `references/sources.md` 了解各信源的具体获取策略
 
 ### 用户交互流程
