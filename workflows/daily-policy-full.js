@@ -20,8 +20,6 @@ export const meta = {
  * 4. 保存到 Z:\工作\CC\Official-Document-Drafting-Agent\生成\日期文件夹
  */
 
-import { format } from 'date-fns'
-
 // ============ 工具函数 ============
 
 function getDateStr() {
