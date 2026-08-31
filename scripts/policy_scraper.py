@@ -51,7 +51,12 @@ SOURCES = [
     {
         "id": "people",
         "name": "人民日报",
-        "url": "http://paper.people.com.cn/rmrb/html/2026-08/31/nbs.D110000renmrb_01.htm",
+        # 使用人民网首页动态页面，不依赖硬编码日期
+        "url": "http://www.people.com.cn/",
+        "alt_urls": [
+            "http://politics.people.com.cn/",
+            "http://cpc.people.com.cn/",
+        ],
         "fallback_search": "人民日报 今日 头版 政策 2026",
     },
     {
@@ -63,19 +68,34 @@ SOURCES = [
     {
         "id": "gov",
         "name": "国务院",
-        "url": "https://www.gov.cn/zhengce/zuixinwen/",
+        # 修正 URL：优先使用 zhengce（政策列表页），其次 zuixin（最新政策）
+        "url": "https://www.gov.cn/zhengce/",
+        "alt_urls": [
+            "https://www.gov.cn/zhengce/list.htm",
+            "https://www.gov.cn/zhengce/zuixin/",
+        ],
         "fallback_search": "国务院 最新政策文件 gov.cn 2026",
     },
     {
         "id": "moa",
         "name": "农业农村部",
-        "url": "https://www.moa.gov.cn/",
+        # 政务动态页列表完整，标题在 a[title] 属性中
+        "url": "https://www.moa.gov.cn/xw/zwdt/",
+        "alt_urls": [
+            "https://www.moa.gov.cn/",
+            "https://www.moa.gov.cn/xw/zxfb/",
+        ],
         "fallback_search": "农业农村部 最新政策 动态 2026",
     },
     {
         "id": "most",
         "name": "科技部",
-        "url": "https://www.most.gov.cn/",
+        # kjbgz 为科技部最新工作动态页，时效性好
+        "url": "https://www.most.gov.cn/kjbgz/",
+        "alt_urls": [
+            "https://www.most.gov.cn/xxgk/xinxifenlei/fdzdgknr/fgzc/",
+            "https://www.most.gov.cn/xxgk/xinxifenlei/fdzdgknr/fgzc/gfxwj/",
+        ],
         "fallback_search": "科技部 最新政策 动态 2026",
     },
     {
@@ -111,10 +131,44 @@ def fetch_url(url, timeout=TIMEOUT):
         return None, str(e)
 
 
+def extract_full_title(a_tag):
+    """
+    从 <a> 标签中提取完整标题。
+    优先使用 title 属性（完整标题），降级到可见文本。
+    同时清理截断符号（... 或 …）和日期后缀。
+    """
+    title_attr = (a_tag.get("title") or "").strip()
+    visible_text = (a_tag.get_text(strip=True) or "").strip()
+
+    # 优先用 title 属性（通常包含完整标题）
+    if title_attr and len(title_attr) > len(visible_text):
+        best = title_attr
+    else:
+        best = visible_text
+
+    if not best:
+        return ""
+
+    # 清理截断符号
+    best = best.rstrip(".")
+    best = best.rstrip("。")
+    best = best.rstrip("…")
+    best = re.sub(r'\.{2,}$', '', best)
+
+    # 清理日期后缀 (如 "...08-28" -> "..." + 日期)
+    best = re.sub(r'[.\d]{5,10}$', '', best)
+
+    # 去掉空格和多余空白
+    best = ' '.join(best.split())
+
+    return best
+
+
 def parse_html_items(html, source_name):
     """
     从 HTML 中提取标题列表。
     通用策略：提取所有 <a> 标签的文本，过滤掉导航和无意义内容。
+    标题优先取 title 属性（完整标题），避免 CSS 截断导致的省略号。
     """
     if not html:
         return []
@@ -125,19 +179,48 @@ def parse_html_items(html, source_name):
     items = []
     seen_titles = set()
 
-    # 优先尝试常见新闻列表选择器
-    selectors = [
-        ".list a", ".news-list a", ".newslist a", ".article-list a",
-        ".content-list a", ".main-news a", ".news-item a", ".txtList a",
-        "ul.list li a", "ul li a",
-        ".news a", ".focus a", ".headline a",
-        "#content a", ".text a",
-    ]
+    # 按信源配置不同的选择器优先级
+    # 农业农村部 - 政务动态页用 .ztlb 列表项
+    if source_name == "农业农村部":
+        selectors = [
+            ".ztlb a",
+            ".zwdt-item a",
+            ".list li a",
+            ".news-list a",
+            "ul.list li a",
+        ]
+    # 国务院 - 政策列表通常在 zhengce-content，但主页面是.list li a
+    elif source_name == "国务院":
+        selectors = [
+            ".list li a",
+            ".zhengce-list li a",
+            "#content ul li a",
+            ".policy-item a",
+        ]
+    # 科技部 - 政策法规页面
+    elif source_name == "科技部":
+        selectors = [
+            ".main-content table tr td a",
+            ".flfg-list li a",
+            ".most-table tbody tr td a",
+            ".flfg-item a",
+            ".news-item a",
+            ".list li a",
+        ]
+    else:
+        # 其他信源使用通用选择器
+        selectors = [
+            ".list a", ".news-list a", ".newslist a", ".article-list a",
+            ".content-list a", ".main-news a", ".news-item a", ".txtList a",
+            "ul.list li a", "ul li a",
+            ".news a", ".focus a", ".headline a",
+            "#content a", ".text a",
+        ]
 
     for selector in selectors:
         links = soup.select(selector)
         for a in links:
-            text = a.get_text(strip=True)
+            text = extract_full_title(a)
             if text and len(text) > 6 and text not in seen_titles:
                 seen_titles.add(text)
                 items.append({
@@ -149,61 +232,64 @@ def parse_html_items(html, source_name):
         if items:
             break
 
-    # 降级：所有 <a> 标签
+    # 降级：所有 <a> 标签（排除导航链接）
     if not items:
+        nav_keywords = ['首页', '新闻', '专题', '图集', '视频', '播客', '图片', '直播', '论坛', '访谈']
         for a in soup.find_all("a"):
-            text = a.get_text(strip=True)
-            if text and len(text) > 6 and len(text) < 100 and text not in seen_titles:
-                seen_titles.add(text)
-                items.append({
-                    "title": text,
-                    "source": source_name,
-                    "url": a.get("href", ""),
-                    "summary": "",
-                })
+            text = extract_full_title(a)
+            if text and len(text) > 6 and len(text) < 200 and text not in seen_titles:
+                # 排除导航链接
+                is_nav = any(kw in text for kw in nav_keywords)
+                if not is_nav:
+                    seen_titles.add(text)
+                    items.append({
+                        "title": text,
+                        "source": source_name,
+                        "url": a.get("href", ""),
+                        "summary": "",
+                    })
 
-    return items
+    return items[:50]  # 最多返回 50 条，避免太多
 
 
 def scrape_source(source_cfg, max_items=5):
     """
     抓取单个信源，返回政策条目列表。
-    优先直接抓取，失败时返回空列表（由后续 AI 补充）。
+    支持主 URL + alt_urls 备选地址，全部失败时返回占位。
     """
     source_name = source_cfg["name"]
-    url = source_cfg["url"]
 
-    print(f"  📡 正在抓取 {source_name}...")
+    # 构建候选 URL 列表：主 URL + 备选 URL
+    urls_to_try = [source_cfg["url"]] + source_cfg.get("alt_urls", [])
 
-    html, error = fetch_url(url)
+    for i, url in enumerate(urls_to_try):
+        tag = "主地址" if i == 0 else f"备选{i}"
+        print(f"  📡 正在抓取 {source_name}（{tag}：{url[:60]}...）")
 
-    if error:
-        print(f"    ⚠️ {source_name} 抓取失败: {error}")
-        # 返回占位，后续由 AI 通过 WebSearch 补充
-        return [{
-            "title": f"[待搜索] {source_name} 今日重点政策",
-            "source": source_name,
-            "url": "",
-            "summary": f"自动抓取失败，请在 AI 分析阶段通过 WebSearch 搜索：{source_cfg['fallback_search']}",
-            "needs_search": True,
-            "search_query": source_cfg["fallback_search"],
-        }]
+        html, error = fetch_url(url)
 
-    items = parse_html_items(html, source_name)
+        if error:
+            print(f"    ⚠️ {tag} 失败: {error}")
+            continue
 
-    if not items:
-        print(f"    ⚠️ {source_name} 未提取到有效内容")
-        return [{
-            "title": f"[待搜索] {source_name} 今日重点政策",
-            "source": source_name,
-            "url": "",
-            "summary": f"页面结构变化导致解析失败，请在 AI 分析阶段搜索：{source_cfg['fallback_search']}",
-            "needs_search": True,
-            "search_query": source_cfg["fallback_search"],
-        }]
+        items = parse_html_items(html, source_name)
 
-    print(f"    ✅ {source_name} 抓取到 {len(items)} 条")
-    return items[:max_items]
+        if items:
+            print(f"    ✅ {source_name} 抓取到 {len(items)} 条")
+            return items[:max_items]
+
+        print(f"    ⚠️ {tag} 未提取到有效内容，尝试下一个地址...")
+
+    # 所有地址都失败
+    print(f"    ❌ {source_name} 所有地址均失败")
+    return [{
+        "title": f"[待搜索] {source_name} 今日重点政策",
+        "source": source_name,
+        "url": "",
+        "summary": f"自动抓取失败，请在 AI 分析阶段通过 WebSearch 搜索：{source_cfg['fallback_search']}",
+        "needs_search": True,
+        "search_query": source_cfg["fallback_search"],
+    }]
 
 
 def generate_brief_markdown(items, date_str=None):
